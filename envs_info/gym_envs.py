@@ -13,6 +13,8 @@ print("action_space:", env.action_space)
 print("observation_space:", env.observation_space)
 # print("observation_space.low:", env.observation_space.low)
 # print("observation_space.high:", env.observation_space.high)
+# print(env.observation_space.sample(), env.action_space.sample())
+# print(env.observation_space.n, env.action_space.n)
 
 # for _ in range(1000):
 #     env.render()

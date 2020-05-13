@@ -19,6 +19,8 @@ Press "Improve" and "Evaluate" and repeat pressing both until convergence
 
 - `Value Iteration Solution.ipynb`
 
+- `seminar_vi.ipynb`
+
 -
 ````
 python value_iteration.py
