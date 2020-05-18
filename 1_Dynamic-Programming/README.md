@@ -4,7 +4,7 @@
 
 - `Policy Evaluation Solution.ipynb`
 - `Policy Iteration Solution.ipynb`
-
+- `Policy Iteration - Frozen Lake Problem.ipynb`
 -
 ```
 python policy_iteration.py
@@ -18,9 +18,8 @@ Press "Improve" and "Evaluate" and repeat pressing both until convergence
 ## Value Iteration
 
 - `Value Iteration Solution.ipynb`
-
 - `seminar_vi.ipynb`
-
+- `Value Iteration - Frozen Lake Problem.ipynb`
 -
 ````
 python value_iteration.py
