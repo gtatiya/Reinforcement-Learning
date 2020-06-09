@@ -8,12 +8,21 @@
 
 # In[1]:
 
+
 import csv
+
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow.contrib.layers import flatten, conv2d, fully_connected
+from skimage.transform import resize
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+print(tf.__version__)
+
+# from tensorflow.contrib.layers import flatten, conv2d, fully_connected
+from tensorflow.compat.v1.layers import flatten, conv2d, dense
+
 from collections import deque, Counter
 import random
 from datetime import datetime
@@ -49,8 +58,12 @@ def preprocess_observation(obs):
 # In[3]:
 
 
-env = gym.make("MsPacman-v0")
+env = gym.make("Breakout-v0") #gym.make("MsPacman-v0")
 n_outputs = env.action_space.n
+
+print("n_outputs: ", n_outputs)
+print("action_space:", env.action_space)
+print("observation_space:", env.observation_space)
 
 
 # Okay, Now we define a function called q_network for building our Q network. We input the game state
@@ -65,30 +78,36 @@ tf.reset_default_graph()
 def q_network(X, name_scope):
     
     # Initialize layers
-    initializer = tf.contrib.layers.variance_scaling_initializer()
+    # initializer = tf.contrib.layers.variance_scaling_initializer()
+    initializer = tf.keras.initializers.VarianceScaling(scale=2.0)
 
     with tf.variable_scope(name_scope) as scope: 
 
         # initialize the convolutional layers
-        layer_1 = conv2d(X, num_outputs=32, kernel_size=(8,8), stride=4, padding='SAME', weights_initializer=initializer) 
+        #layer_1 = conv2d(X, num_outputs=32, kernel_size=(8,8), stride=4, padding='SAME', weights_initializer=initializer) 
+        layer_1 = conv2d(X, filters=32, kernel_size=(8,8), strides=4, padding='SAME')
         tf.summary.histogram('layer_1',layer_1)
         
-        layer_2 = conv2d(layer_1, num_outputs=64, kernel_size=(4,4), stride=2, padding='SAME', weights_initializer=initializer)
+        #layer_2 = conv2d(layer_1, num_outputs=64, kernel_size=(4,4), stride=2, padding='SAME', weights_initializer=initializer)
+        layer_2 = conv2d(layer_1, filters=64, kernel_size=(4,4), strides=2, padding='SAME')
         tf.summary.histogram('layer_2',layer_2)
         
-        layer_3 = conv2d(layer_2, num_outputs=64, kernel_size=(3,3), stride=1, padding='SAME', weights_initializer=initializer)
+        #layer_3 = conv2d(layer_2, num_outputs=64, kernel_size=(3,3), stride=1, padding='SAME', weights_initializer=initializer)
+        layer_3 = conv2d(layer_2, filters=64, kernel_size=(3,3), strides=1, padding='SAME')
         tf.summary.histogram('layer_3',layer_3)
         
         # Flatten the result of layer_3 before feeding to the fully connected layer
         flat = flatten(layer_3)
 
-        fc = fully_connected(flat, num_outputs=128, weights_initializer=initializer)
+        #fc = fully_connected(flat, num_outputs=128, weights_initializer=initializer)
+        #fc = dense(flat, units=128)
+        fc = dense(flat, units=512) #GT
         tf.summary.histogram('fc',fc)
         
-        output = fully_connected(fc, num_outputs=n_outputs, activation_fn=None, weights_initializer=initializer)
+        #output = fully_connected(fc, num_outputs=n_outputs, activation_fn=None, weights_initializer=initializer)
+        output = dense(fc, units=n_outputs, activation=None)
         tf.summary.histogram('output',output)
         
-
         # Vars will store the parameters of the network such as weights
         vars = {v.name[len(scope.name):]: v for v in tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope.name)} 
         return vars, output
@@ -139,7 +158,7 @@ exp_buffer = deque(maxlen=buffer_len)
 def sample_memories(batch_size):
     perm_batch = np.random.permutation(len(exp_buffer))[:batch_size]
     mem = np.array(exp_buffer)[perm_batch]
-    return mem[:,0], mem[:,1], mem[:,2], mem[:,3], mem[:,4]
+    return mem[:,0], mem[:,1], mem[:,2], mem[:,3], mem[:,4] # obs, action, next_obs, reward, done
 
 
 # Now we define our network hyperparameters,
@@ -147,11 +166,13 @@ def sample_memories(batch_size):
 # In[8]:
 
 
-num_episodes = 10000 #800
+num_episodes = 800
 batch_size = 48
-input_shape = (None, 88, 80, 1)
+#input_shape = (None, 88, 80, 1)
+input_shape = (None, 84, 84, 1) #GT
 learning_rate = 0.001
-X_shape = (None, 88, 80, 1)
+#X_shape = (None, 88, 80, 1)
+X_shape = (None, 84, 84, 1) #GT
 discount_factor = 0.97
 
 global_step = 0
@@ -192,17 +213,22 @@ targetQ, targetQ_outputs = q_network(X, 'targetQ')
 X_action = tf.placeholder(tf.int32, shape=(None,))
 #Q_action = tf.reduce_sum(targetQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True)
 Q_action = tf.reduce_sum(mainQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True) #GT
+print("Q_action: ", Q_action)
+
 
 # Copy the primary Q network parameters to the target  Q network
 
 # In[12]:
 
 
-copy_op = [tf.assign(main_name, targetQ[var_name]) for var_name, main_name in mainQ.items()]
-copy_target_to_main = tf.group(*copy_op)
+# copy_op = [tf.assign(main_name, targetQ[var_name]) for var_name, main_name in mainQ.items()]
+# copy_target_to_main = tf.group(*copy_op)
+
 #GT
+#tf.compat.v1.assign(ref, value): outputs a Tensor that holds the new value of ref after the value has been assigned
 copy_op = [tf.assign(target_name, mainQ[var_name]) for var_name, target_name in targetQ.items()]
 copy_target_to_main = tf.group(*copy_op)
+
 
 # Compute and optimize loss using gradient descent optimizer
 
@@ -226,15 +252,57 @@ merge_summary = tf.summary.merge_all()
 file_writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
 
 
+# In[14]:
+
+
+def preprocess_observation_gt(obs):
+
+    # Crop
+    img = obs[34:34+160]
+    
+    # Convert the image to greyscale
+    img = img.mean(axis=2)
+
+    # Resize
+    img = resize(img, (84, 84))
+
+    return img.reshape(84, 84, 1)
+
+
+# In[15]:
+
+
+# For Testing....
+
+"""
+obs = env.reset()
+
+print("obs: ", obs.shape)
+plt.imshow(obs)
+plt.colorbar()
+plt.show()
+
+# get the preprocessed game screen
+#obs = preprocess_observation(obs)
+obs = preprocess_observation_gt(obs)
+
+print("obs: ", obs.shape)
+plt.imshow(obs.reshape((obs.shape[0], obs.shape[1])))
+plt.colorbar()
+plt.show()
+"""
+
+
 #  Now we start the tensorflow session and run the model,
 
-# In[1]:
+# In[ ]:
 
-filename = "my_fix" #"original"
+
+filename = "my_fix"
 with open(filename+'.csv','w') as f:
     writer = csv.writer(f, lineterminator="\n")
     writer.writerow(['episode', 'reward'])
-
+    
 with tf.Session() as sess:
     init.run()
     
@@ -251,10 +319,15 @@ with tf.Session() as sess:
         # while the state is not the terminal state
         while not done:
 
-           #env.render()
+            #env.render()
         
             # get the preprocessed game screen
-            obs = preprocess_observation(obs)
+            #obs = preprocess_observation(obs)
+            obs = preprocess_observation_gt(obs) #GT
+            
+            #plt.imshow(obs.reshape((obs.shape[0], obs.shape[1])))
+            #plt.colorbar()
+            #plt.show()
 
             # feed the game screen and get the Q values for each action
             actions = mainQ_outputs.eval(feed_dict={X:[obs], in_training_mode:False})
@@ -270,10 +343,12 @@ with tf.Session() as sess:
             next_obs, reward, done, _ = env.step(action)
 
             # Store this transistion as an experience in the replay buffer
-            exp_buffer.append([obs, action, preprocess_observation(next_obs), reward, done])
+            #exp_buffer.append([obs, action, preprocess_observation(next_obs), reward, done])
+            exp_buffer.append([obs, action, preprocess_observation_gt(next_obs), reward, done]) #GT
             
             # After certain steps, we train our Q network with samples from the experience replay buffer
             if global_step % steps_train == 0 and global_step > start_steps:
+                #print('i:', i, 'Learn: ', global_step, start_steps, steps_train)
                 
                 # sample experience
                 o_obs, o_act, o_next_obs, o_rew, o_done = sample_memories(batch_size)
@@ -292,8 +367,8 @@ with tf.Session() as sess:
                 y_batch = o_rew + discount_factor * np.max(next_act, axis=-1) * (1-o_done) 
 
                 # merge all summaries and write to the file
-                #mrg_summary = merge_summary.eval(feed_dict={X:o_obs, y:np.expand_dims(y_batch, axis=-1), X_action:o_act, in_training_mode:False})
-                #file_writer.add_summary(mrg_summary, global_step)
+                mrg_summary = merge_summary.eval(feed_dict={X:o_obs, y:np.expand_dims(y_batch, axis=-1), X_action:o_act, in_training_mode:False})
+                file_writer.add_summary(mrg_summary, global_step)
 
                 # now we train the network and calculate loss
                 train_loss, _ = sess.run([loss, training_op], feed_dict={X:o_obs, y:np.expand_dims(y_batch, axis=-1), X_action:o_act, in_training_mode:True})
@@ -301,7 +376,7 @@ with tf.Session() as sess:
             
             # after some interval we copy our main Q network weights to target Q network
             if (global_step+1) % copy_steps == 0 and global_step > start_steps:
-                print('i:', i, ', target_params_replaced\n')
+                #print('i:', i, 'Replace: ', global_step+1, start_steps, copy_steps)
                 copy_target_to_main.run()
                 
             obs = next_obs
@@ -322,3 +397,10 @@ with tf.Session() as sess:
         with open(filename+'.csv', 'a') as f: # append to the file created
             writer = csv.writer(f, lineterminator="\n")
             writer.writerow([i+1, episodic_reward])
+
+
+# In[ ]:
+
+
+
+

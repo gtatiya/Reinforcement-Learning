@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
-#get_ipython().run_line_magic('matplotlib', 'inline')
+get_ipython().run_line_magic('matplotlib', 'inline')
 
 import gym
 from gym.wrappers import Monitor
@@ -18,7 +18,9 @@ import pickle
 import dill
 import csv
 import matplotlib.pyplot as plt
-import tensorflow as tf
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 print(tf.__version__)
 
 sys.path.append("../envs_info/")
@@ -27,20 +29,20 @@ from lib import plotting
 from collections import deque, namedtuple
 
 
-# In[ ]:
+# In[2]:
 
 
 env = gym.envs.make("Breakout-v0")
 
 
-# In[ ]:
+# In[3]:
 
 
 # Atari Actions: 0 (noop), 1 (fire), 2 (left) and 3 (right) are valid actions
 VALID_ACTIONS = [0, 1, 2, 3]
 
 
-# In[ ]:
+# In[4]:
 
 
 class StateProcessor():
@@ -69,7 +71,7 @@ class StateProcessor():
         return sess.run(self.output, { self.input_state: state })
 
 
-# In[ ]:
+# In[5]:
 
 
 class Estimator():
@@ -109,15 +111,21 @@ class Estimator():
         batch_size = tf.shape(self.X_pl)[0]
 
         # Three convolutional layers
-        conv1 = tf.contrib.layers.conv2d(X, 32, 8, 4, activation_fn=tf.nn.relu)
-        conv2 = tf.contrib.layers.conv2d(conv1, 64, 4, 2, activation_fn=tf.nn.relu)
-        conv3 = tf.contrib.layers.conv2d(conv2, 64, 3, 1, activation_fn=tf.nn.relu)
+        #conv1 = tf.contrib.layers.conv2d(X, 32, 8, 4, activation_fn=tf.nn.relu)
+        conv1 = tf.layers.conv2d(X, 32, 8, 4, activation=tf.nn.relu)
+        #conv2 = tf.contrib.layers.conv2d(conv1, 64, 4, 2, activation_fn=tf.nn.relu)
+        conv2 = tf.layers.conv2d(conv1, 64, 4, 2, activation=tf.nn.relu)
+        #conv3 = tf.contrib.layers.conv2d(conv2, 64, 3, 1, activation_fn=tf.nn.relu)
+        conv3 = tf.layers.conv2d(conv2, 64, 3, 1, activation=tf.nn.relu)
 
         # Fully connected layers
-        flattened = tf.contrib.layers.flatten(conv3)
-        fc1 = tf.contrib.layers.fully_connected(flattened, 512)
-        self.predictions = tf.contrib.layers.fully_connected(fc1, len(VALID_ACTIONS))
-        
+        #flattened = tf.contrib.layers.flatten(conv3)
+        flattened = tf.layers.flatten(conv3)
+        #fc1 = tf.contrib.layers.fully_connected(flattened, 512)
+        fc1 = tf.layers.dense(flattened, 512)
+        #self.predictions = tf.contrib.layers.fully_connected(fc1, len(VALID_ACTIONS))
+        self.predictions = tf.layers.dense(fc1, len(VALID_ACTIONS))
+
         # Get the predictions for the chosen actions only
         gather_indices = tf.range(batch_size) * tf.shape(self.predictions)[1] + self.actions_pl
         self.action_predictions = tf.gather(tf.reshape(self.predictions, [-1]), gather_indices)
@@ -128,8 +136,9 @@ class Estimator():
 
         # Optimizer Parameters from original paper
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
-        self.train_op = self.optimizer.minimize(self.loss, global_step=tf.contrib.framework.get_global_step())
-        
+        #self.train_op = self.optimizer.minimize(self.loss, global_step=tf.contrib.framework.get_global_step())
+        self.train_op = self.optimizer.minimize(self.loss, global_step=tf.train.get_global_step())
+
         # Summaries for Tensorboard
         self.summaries = tf.summary.merge([
             tf.summary.scalar("loss", self.loss),
@@ -166,14 +175,15 @@ class Estimator():
           The calculated loss on the batch.
         """
         feed_dict = { self.X_pl: s, self.y_pl: y, self.actions_pl: a }
-        summaries, global_step, _, loss = sess.run([self.summaries, tf.contrib.framework.get_global_step(), self.train_op, self.loss], feed_dict)
+        #summaries, global_step, _, loss = sess.run([self.summaries, tf.contrib.framework.get_global_step(), self.train_op, self.loss], feed_dict)
+        summaries, global_step, _, loss = sess.run([self.summaries, tf.train.get_global_step(), self.train_op, self.loss], feed_dict)
         
         if self.summary_writer:
             self.summary_writer.add_summary(summaries, global_step)
         return loss
 
 
-# In[ ]:
+# In[6]:
 
 
 # For Testing....
@@ -203,7 +213,7 @@ with tf.Session() as sess:
     print(e.update(sess, observations, a, y))
 
 
-# In[ ]:
+# In[7]:
 
 
 class ModelParametersCopier():
@@ -237,7 +247,7 @@ class ModelParametersCopier():
         sess.run(self.update_ops)
 
 
-# In[ ]:
+# In[8]:
 
 
 def make_epsilon_greedy_policy(estimator, nA):
@@ -262,7 +272,7 @@ def make_epsilon_greedy_policy(estimator, nA):
     return policy_fn
 
 
-# In[ ]:
+# In[9]:
 
 
 def deep_q_learning(sess,
@@ -339,6 +349,7 @@ def deep_q_learning(sess,
     saver = tf.train.Saver()
     # Load a previous checkpoint if we find one
     latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    #latest_checkpoint = checkpoint_path #GT
     if latest_checkpoint:
         print("Loading model checkpoint {}...\n".format(latest_checkpoint))
         saver.restore(sess, latest_checkpoint)
@@ -403,7 +414,9 @@ def deep_q_learning(sess,
 
         # One step in the environment
         for t in itertools.count():
-
+            
+            env.render()
+            
             # Epsilon for this time step
             epsilon = epsilons[min(total_t, epsilon_decay_steps-1)]
 
@@ -489,7 +502,7 @@ def deep_q_learning(sess,
 tf.reset_default_graph()
 
 # Where we save our checkpoints and graphs
-experiment_dir = os.path.abspath("/cluster/kappa/90-days-archive/sinapovlab/gtatiy01/RL/FA/experiments/{}".format(env.spec.id))
+experiment_dir = os.path.abspath("./experiments/{}".format(env.spec.id))
 
 # Create a glboal step variable
 global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -527,3 +540,16 @@ with tf.Session() as sess:
                                     batch_size=32):
 
         print("\nEpisode Reward: {}".format(stats.episode_rewards[-1]))
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
