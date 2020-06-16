@@ -1,14 +1,19 @@
 import gym
-
-
-# print("Gym Envs:", gym.envs.registry.all())
-
 """
 Breakout-v0
 CartPole-v0
 FrozenLake-v0
 """
-env = gym.make('FrozenLake-v0')
+
+import gym_minecraft
+"""
+MinecraftBasic-v0
+"""
+# print("Gym Envs:", gym.envs.registry.all())
+
+env = gym.make('MinecraftBasic-v0')
+env.init(start_minecraft=True) # Only for gym_minecraft
+
 print("action_space:", env.action_space)
 print("observation_space:", env.observation_space)
 # print("observation_space.low:", env.observation_space.low)

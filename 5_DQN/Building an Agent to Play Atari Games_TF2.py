@@ -10,6 +10,7 @@
 
 
 import csv
+import os
 
 import numpy as np
 import gym
@@ -66,11 +67,22 @@ print("action_space:", env.action_space)
 print("observation_space:", env.observation_space)
 
 
+# In[4]:
+
+
+filename = "original-512" #"my_fix-512"
+
+if filename.startswith('original'):
+    print("original")
+else:
+    print("my_fix")
+
+
 # Okay, Now we define a function called q_network for building our Q network. We input the game state
 # to the Q network and get the Q values for all the actions in that state. <br><br>
 # We build Q network with three convolutional layers with same padding followed by a fully connected layer. 
 
-# In[4]:
+# In[5]:
 
 
 tf.reset_default_graph()
@@ -119,7 +131,7 @@ def q_network(X, name_scope):
 # We use decaying epsilon greedy policy where value of epsilon will be decaying over time as we don't want to explore
 # forever. So over time our policy will be exploiting only good actions.
 
-# In[5]:
+# In[6]:
 
 
 epsilon = 0.5
@@ -141,7 +153,7 @@ def epsilon_greedy(action, step):
 # We store all the agent's experience i.e (state, action, rewards) in the experience replay buffer
 # and  we sample from this minibatch of experience for training the network.
 
-# In[6]:
+# In[7]:
 
 
 buffer_len = 20000
@@ -152,7 +164,7 @@ exp_buffer = deque(maxlen=buffer_len)
 # from the memory.
 # 
 
-# In[7]:
+# In[8]:
 
 
 def sample_memories(batch_size):
@@ -163,16 +175,18 @@ def sample_memories(batch_size):
 
 # Now we define our network hyperparameters,
 
-# In[8]:
+# In[9]:
 
 
-num_episodes = 800
+num_episodes = 1000 #800
 batch_size = 48
 #input_shape = (None, 88, 80, 1)
-input_shape = (None, 84, 84, 1) #GT
+#input_shape = (None, 84, 84, 1) #GT
+input_shape = (None, 84, 84, 4) #GT
 learning_rate = 0.001
 #X_shape = (None, 88, 80, 1)
-X_shape = (None, 84, 84, 1) #GT
+#X_shape = (None, 84, 84, 1) #GT
+X_shape = (None, 84, 84, 4) #GT
 discount_factor = 0.97
 
 global_step = 0
@@ -181,10 +195,13 @@ steps_train = 4
 start_steps = 2000
 
 
-# In[9]:
+# In[10]:
 
 
-logdir = 'logs'
+logdir = filename
+
+os.makedirs(logdir, exist_ok=True)
+
 tf.reset_default_graph()
 
 # Now we define the placeholder for our input i.e game state
@@ -196,7 +213,7 @@ in_training_mode = tf.placeholder(tf.bool)
 
 #  Now let us build our primary and target Q network
 
-# In[10]:
+# In[11]:
 
 
 # we build our Q network, which takes the input X and generates Q values for all the actions in the state
@@ -206,33 +223,37 @@ mainQ, mainQ_outputs = q_network(X, 'mainQ')
 targetQ, targetQ_outputs = q_network(X, 'targetQ')
 
 
-# In[11]:
+# In[12]:
 
 
 # define the placeholder for our action values
 X_action = tf.placeholder(tf.int32, shape=(None,))
-#Q_action = tf.reduce_sum(targetQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True)
-Q_action = tf.reduce_sum(mainQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True) #GT
+if filename.startswith('original'):
+    Q_action = tf.reduce_sum(targetQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True)
+else:
+    Q_action = tf.reduce_sum(mainQ_outputs * tf.one_hot(X_action, n_outputs), axis=-1, keep_dims=True) #GT
+
 print("Q_action: ", Q_action)
 
 
 # Copy the primary Q network parameters to the target  Q network
 
-# In[12]:
+# In[13]:
 
 
-# copy_op = [tf.assign(main_name, targetQ[var_name]) for var_name, main_name in mainQ.items()]
-# copy_target_to_main = tf.group(*copy_op)
-
-#GT
-#tf.compat.v1.assign(ref, value): outputs a Tensor that holds the new value of ref after the value has been assigned
-copy_op = [tf.assign(target_name, mainQ[var_name]) for var_name, target_name in targetQ.items()]
-copy_target_to_main = tf.group(*copy_op)
+if filename.startswith('original'):
+    copy_op = [tf.assign(main_name, targetQ[var_name]) for var_name, main_name in mainQ.items()]
+    copy_target_to_main = tf.group(*copy_op)
+else:
+    #GT
+    #tf.compat.v1.assign(ref, value): outputs a Tensor that holds the new value of ref after the value has been assigned
+    copy_op = [tf.assign(target_name, mainQ[var_name]) for var_name, target_name in targetQ.items()]
+    copy_target_to_main = tf.group(*copy_op)
 
 
 # Compute and optimize loss using gradient descent optimizer
 
-# In[13]:
+# In[14]:
 
 
 # define a placeholder for our output i.e action
@@ -251,8 +272,15 @@ loss_summary = tf.summary.scalar('LOSS', loss)
 merge_summary = tf.summary.merge_all()
 file_writer = tf.summary.FileWriter(logdir, tf.get_default_graph())
 
+checkpoint_path = logdir
+saver = tf.train.Saver()
+# latest_checkpoint = checkpoint_path #GT: load model
+# if latest_checkpoint:
+#     print("Loading model checkpoint {}...\n".format(latest_checkpoint))
+#     saver.restore(sess, latest_checkpoint)
 
-# In[14]:
+
+# In[15]:
 
 
 def preprocess_observation_gt(obs):
@@ -269,7 +297,7 @@ def preprocess_observation_gt(obs):
     return img.reshape(84, 84, 1)
 
 
-# In[15]:
+# In[16]:
 
 
 # For Testing....
@@ -293,12 +321,92 @@ plt.show()
 """
 
 
+# In[17]:
+
+
+class StateProcessor():
+    """
+    Processes a raw Atari images. Resizes it and converts it to grayscale.
+    """
+    def __init__(self):
+        # Build the Tensorflow graph
+        with tf.variable_scope("state_processor"):
+            self.input_state = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
+            self.output = tf.image.rgb_to_grayscale(self.input_state)
+            self.output = tf.image.crop_to_bounding_box(self.output, 34, 0, 160, 160)
+            self.output = tf.image.resize_images(
+                self.output, [84, 84], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+            self.output = tf.squeeze(self.output)
+
+    def process(self, sess, state):
+        """
+        Args:
+            sess: A Tensorflow session object
+            state: A [210, 160, 3] Atari RGB State
+
+        Returns:
+            A processed [84, 84] state representing grayscale values.
+        """
+        return sess.run(self.output, { self.input_state: state })
+
+
+# In[18]:
+
+
+# For Testing....
+
+"""
+tf.reset_default_graph()
+global_step = tf.Variable(0, name="global_step", trainable=False)
+
+sp = StateProcessor()
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    
+    # Example observation batch
+    observation = env.reset()
+    
+    print("observation: ", observation.shape)
+    plt.imshow(observation)
+    plt.colorbar()
+    plt.show()
+    
+    observation_p = sp.process(sess, observation)
+    print("observation_p: ", observation_p.shape)
+    plt.imshow(observation_p)
+    plt.colorbar()
+    plt.show()
+    
+    ###
+    state = env.reset()
+    state = state_processor.process(sess, state)
+    state = np.stack([state] * 4, axis=2)
+    next_state = state_processor.process(sess, next_state)
+    next_state = np.append(state[:,:,1:], np.expand_dims(next_state, 2), axis=2)
+    ###
+    
+    observation = np.stack([observation_p] * 4, axis=2)
+    print("observation: ", observation.shape)
+    plt.imshow(observation)
+    plt.colorbar()
+    plt.show()
+    
+    observations = np.array([observation] * 2)
+    print("observations: ", observations.shape)
+    plt.imshow(observations[0])
+    plt.colorbar()
+    plt.show()
+"""
+
+
 #  Now we start the tensorflow session and run the model,
 
 # In[ ]:
 
 
-filename = "my_fix"
+state_processor = StateProcessor()
+
 with open(filename+'.csv','w') as f:
     writer = csv.writer(f, lineterminator="\n")
     writer.writerow(['episode', 'reward'])
@@ -309,12 +417,19 @@ with tf.Session() as sess:
     all_episodic_reward = []
     # for each episode
     for i in range(num_episodes):
+        
+        # Save the current checkpoint
+        saver.save(tf.get_default_session(), logdir+os.sep+checkpoint_path)
+        
         done = False
         obs = env.reset()
         epoch = 0
         episodic_reward = 0
         actions_counter = Counter() 
         episodic_loss = []
+        
+        obs = state_processor.process(sess, obs) #GT
+        obs = np.stack([obs] * 4, axis=2) #GT
 
         # while the state is not the terminal state
         while not done:
@@ -323,7 +438,7 @@ with tf.Session() as sess:
         
             # get the preprocessed game screen
             #obs = preprocess_observation(obs)
-            obs = preprocess_observation_gt(obs) #GT
+            #obs = preprocess_observation_gt(obs) #GT
             
             #plt.imshow(obs.reshape((obs.shape[0], obs.shape[1])))
             #plt.colorbar()
@@ -344,7 +459,10 @@ with tf.Session() as sess:
 
             # Store this transistion as an experience in the replay buffer
             #exp_buffer.append([obs, action, preprocess_observation(next_obs), reward, done])
-            exp_buffer.append([obs, action, preprocess_observation_gt(next_obs), reward, done]) #GT
+            #exp_buffer.append([obs, action, preprocess_observation_gt(next_obs), reward, done]) #GT
+            next_obs = state_processor.process(sess, next_obs) #GT
+            next_obs = np.stack([next_obs] * 4, axis=2) #GT
+            exp_buffer.append([obs, action, next_obs, reward, done]) #GT
             
             # After certain steps, we train our Q network with samples from the experience replay buffer
             if global_step % steps_train == 0 and global_step > start_steps:
@@ -360,9 +478,11 @@ with tf.Session() as sess:
                 o_next_obs = [x for x in o_next_obs]
 
                 # next actions
-                #next_act = mainQ_outputs.eval(feed_dict={X:o_next_obs, in_training_mode:False})
-                next_act = targetQ_outputs.eval(feed_dict={X:o_next_obs, in_training_mode:False})  #GT
-
+                if filename.startswith('original'):
+                    next_act = mainQ_outputs.eval(feed_dict={X:o_next_obs, in_training_mode:False})                
+                else:
+                    next_act = targetQ_outputs.eval(feed_dict={X:o_next_obs, in_training_mode:False})  #GT
+    
                 # reward
                 y_batch = o_rew + discount_factor * np.max(next_act, axis=-1) * (1-o_done) 
 
