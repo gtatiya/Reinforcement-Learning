@@ -142,10 +142,43 @@ eps_decay_steps = 500000
 def epsilon_greedy(action, step):
     p = np.random.random(1).squeeze()
     epsilon = max(eps_min, eps_max - (eps_max-eps_min) * step/eps_decay_steps)
+    # print("epsilon: ", epsilon)
     if np.random.rand() < epsilon:
         return np.random.randint(n_outputs)
     else:
         return action
+
+epsilon_start = 1.0
+epsilon_end = 0.1
+epsilon_decay_steps = 500000
+# The epsilon decay schedule
+epsilons = np.linspace(epsilon_start, epsilon_end, epsilon_decay_steps)
+
+def epsilon_greedy_gt(action, step):
+    epsilon = epsilons[min(step, epsilon_decay_steps-1)]
+    #print("epsilon: ", epsilon)
+    
+    if np.random.rand() < epsilon:
+        return np.random.randint(n_outputs)
+    else:
+        return action
+
+
+# In[7]:
+
+
+"""
+import numpy as np
+
+rand = np.random.rand()
+print(rand)
+epsilon = 0.9
+
+if rand < epsilon:
+    print("RANDOM")
+else:
+    print("Selected ACTION")
+"""
 
 
 # Now, we initialize our experience replay buffer of length 20000 which holds the experience.
@@ -153,10 +186,11 @@ def epsilon_greedy(action, step):
 # We store all the agent's experience i.e (state, action, rewards) in the experience replay buffer
 # and  we sample from this minibatch of experience for training the network.
 
-# In[7]:
+# In[8]:
 
 
-buffer_len = 20000
+#buffer_len = 20000
+buffer_len = 500000 # GT
 exp_buffer = deque(maxlen=buffer_len)
 
 
@@ -164,7 +198,7 @@ exp_buffer = deque(maxlen=buffer_len)
 # from the memory.
 # 
 
-# In[8]:
+# In[9]:
 
 
 def sample_memories(batch_size):
@@ -175,11 +209,12 @@ def sample_memories(batch_size):
 
 # Now we define our network hyperparameters,
 
-# In[9]:
+# In[10]:
 
 
-num_episodes = 1000 #800
-batch_size = 48
+num_episodes = 10000 #800
+#batch_size = 48
+batch_size = 32 #GT
 #input_shape = (None, 88, 80, 1)
 #input_shape = (None, 84, 84, 1) #GT
 input_shape = (None, 84, 84, 4) #GT
@@ -187,15 +222,19 @@ learning_rate = 0.001
 #X_shape = (None, 88, 80, 1)
 #X_shape = (None, 84, 84, 1) #GT
 X_shape = (None, 84, 84, 4) #GT
-discount_factor = 0.97
+#discount_factor = 0.97
+discount_factor = 0.99 #GT
 
 global_step = 0
-copy_steps = 100
-steps_train = 4
-start_steps = 2000
+#copy_steps = 100
+copy_steps = 10000 #GT
+#steps_train = 4
+steps_train = 1 # GT
+#start_steps = 2000
+start_steps = 50000 #GT
 
 
-# In[10]:
+# In[11]:
 
 
 logdir = filename
@@ -213,7 +252,7 @@ in_training_mode = tf.placeholder(tf.bool)
 
 #  Now let us build our primary and target Q network
 
-# In[11]:
+# In[12]:
 
 
 # we build our Q network, which takes the input X and generates Q values for all the actions in the state
@@ -223,7 +262,7 @@ mainQ, mainQ_outputs = q_network(X, 'mainQ')
 targetQ, targetQ_outputs = q_network(X, 'targetQ')
 
 
-# In[12]:
+# In[13]:
 
 
 # define the placeholder for our action values
@@ -238,7 +277,7 @@ print("Q_action: ", Q_action)
 
 # Copy the primary Q network parameters to the target  Q network
 
-# In[13]:
+# In[14]:
 
 
 if filename.startswith('original'):
@@ -253,7 +292,7 @@ else:
 
 # Compute and optimize loss using gradient descent optimizer
 
-# In[14]:
+# In[15]:
 
 
 # define a placeholder for our output i.e action
@@ -280,7 +319,7 @@ saver = tf.train.Saver()
 #     saver.restore(sess, latest_checkpoint)
 
 
-# In[15]:
+# In[16]:
 
 
 def preprocess_observation_gt(obs):
@@ -297,7 +336,7 @@ def preprocess_observation_gt(obs):
     return img.reshape(84, 84, 1)
 
 
-# In[16]:
+# In[17]:
 
 
 # For Testing....
@@ -321,7 +360,7 @@ plt.show()
 """
 
 
-# In[17]:
+# In[18]:
 
 
 class StateProcessor():
@@ -350,7 +389,7 @@ class StateProcessor():
         return sess.run(self.output, { self.input_state: state })
 
 
-# In[18]:
+# In[19]:
 
 
 # For Testing....
@@ -365,49 +404,53 @@ with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     
     # Example observation batch
-    observation = env.reset()
-    
-    print("observation: ", observation.shape)
-    plt.imshow(observation)
-    plt.colorbar()
-    plt.show()
-    
-    observation_p = sp.process(sess, observation)
-    print("observation_p: ", observation_p.shape)
-    plt.imshow(observation_p)
-    plt.colorbar()
-    plt.show()
-    
-    ###
     state = env.reset()
-    state = state_processor.process(sess, state)
-    state = np.stack([state] * 4, axis=2)
-    next_state = state_processor.process(sess, next_state)
-    next_state = np.append(state[:,:,1:], np.expand_dims(next_state, 2), axis=2)
-    ###
     
-    observation = np.stack([observation_p] * 4, axis=2)
-    print("observation: ", observation.shape)
-    plt.imshow(observation)
+    print("ORIGINAL STATE")
+    print("state: ", state.shape)
+    plt.imshow(state)
     plt.colorbar()
     plt.show()
     
-    observations = np.array([observation] * 2)
-    print("observations: ", observations.shape)
-    plt.imshow(observations[0])
+    print("PROCESSED STATE")
+    state_p = sp.process(sess, state)
+    print("state_p: ", state_p.shape)
+    print("state_p[0][0]: ", state_p[0][0])
+    plt.imshow(state_p)
+    plt.colorbar()
+    plt.show()
+        
+    print("SAME 4 PIXCELS IN 3rd DIMENSION")
+    state = np.stack([state_p] * 4, axis=2)
+    print("state: ", state.shape)
+    print("state[0][0]: ", state[0][0])
+    plt.imshow(state)
+    plt.colorbar()
+    plt.show()
+    
+    next_state, reward, done, _ = env.step(2)
+    next_state = sp.process(sess, next_state)
+    print("state[:,:,1:]: ", state[:,:,1:].shape)
+    print("np.expand_dims(next_state, 2): ", np.expand_dims(next_state, 2).shape)
+    next_state = np.append(state[:,:,1:], np.expand_dims(next_state, 2), axis=2)
+    
+    print("NEXT STATE - 4 PIXCELS IN 3rd DIMENSION: 3 FROM LAST SATE & 1 FROM NEXT STATE.")
+    print("TO HIGHLIGHT THE CHANGE")
+    print("next_state: ", next_state.shape)
+    plt.imshow(next_state)
     plt.colorbar()
     plt.show()
 """
 
 
-#  Now we start the tensorflow session and run the model,
+# Now we start the tensorflow session and run the model,
 
 # In[ ]:
 
 
 state_processor = StateProcessor()
 
-with open(filename+'.csv','w') as f:
+with open(logdir+os.sep+filename+'.csv','w') as f:
     writer = csv.writer(f, lineterminator="\n")
     writer.writerow(['episode', 'reward'])
     
@@ -419,7 +462,7 @@ with tf.Session() as sess:
     for i in range(num_episodes):
         
         # Save the current checkpoint
-        saver.save(tf.get_default_session(), logdir+os.sep+checkpoint_path)
+        saver.save(tf.get_default_session(), logdir+os.sep+"model"+os.sep+filename) #GT
         
         done = False
         obs = env.reset()
@@ -453,6 +496,7 @@ with tf.Session() as sess:
 
             # select the action using epsilon greedy policy
             action = epsilon_greedy(action, global_step)
+            #action = epsilon_greedy_gt(action, global_step) #GT
             
             # now perform the action and move to the next state, next_obs, receive reward
             next_obs, reward, done, _ = env.step(action)
@@ -461,7 +505,7 @@ with tf.Session() as sess:
             #exp_buffer.append([obs, action, preprocess_observation(next_obs), reward, done])
             #exp_buffer.append([obs, action, preprocess_observation_gt(next_obs), reward, done]) #GT
             next_obs = state_processor.process(sess, next_obs) #GT
-            next_obs = np.stack([next_obs] * 4, axis=2) #GT
+            next_obs = np.append(obs[:,:,1:], np.expand_dims(next_obs, 2), axis=2) # GT            
             exp_buffer.append([obs, action, next_obs, reward, done]) #GT
             
             # After certain steps, we train our Q network with samples from the experience replay buffer
@@ -511,10 +555,10 @@ with tf.Session() as sess:
         plt.ylabel('Rewards')
         plt.xlabel('training steps')
         plt.title(filename, fontsize=20)
-        plt.savefig(filename+".png", bbox_inches='tight', dpi=100)
+        plt.savefig(logdir+os.sep+filename+".png", bbox_inches='tight', dpi=100)
         plt.close()
         
-        with open(filename+'.csv', 'a') as f: # append to the file created
+        with open(logdir+os.sep+filename+'.csv', 'a') as f: # append to the file created
             writer = csv.writer(f, lineterminator="\n")
             writer.writerow([i+1, episodic_reward])
 
