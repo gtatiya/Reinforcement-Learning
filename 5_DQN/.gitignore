@@ -1,1 +1,5 @@
-experiments/
+checkpoints/
+monitor/
+summaries_q/
+
+replay_memory.bin
